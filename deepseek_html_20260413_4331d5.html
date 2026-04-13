@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>3D打印材料库 · 云端同步</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, 'Segoe UI', sans-serif; }
+        body { background: #f1f5f9; margin: 0; padding: 24px 20px; color: #0f172a; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .card { background: white; border-radius: 24px; box-shadow: 0 8px 20px rgba(0,0,0,0.05); padding: 20px 24px; margin-bottom: 28px; }
+        h1 { font-size: 1.8rem; font-weight: 600; margin: 0 0 6px 0; background: linear-gradient(135deg, #1e293b, #2d3a4f); background-clip: text; -webkit-background-clip: text; color: transparent; }
+        .sub { color: #475569; border-left: 3px solid #3b82f6; padding-left: 12px; margin-top: 6px; font-size: 0.9rem; }
+        .filter-bar { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; background: #f8fafc; padding: 16px 20px; border-radius: 20px; margin-bottom: 20px; }
+        .filter-group { flex: 1; min-width: 160px; }
+        .filter-group label { font-size: 0.75rem; font-weight: 600; color: #334155; margin-bottom: 6px; display: block; }
+        .filter-group input, .filter-group select { width: 100%; padding: 10px 12px; border-radius: 16px; border: 1px solid #cbd5e1; background: white; }
+        .btn { border: none; background: #e2e8f0; padding: 8px 18px; border-radius: 40px; font-weight: 500; cursor: pointer; }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-outline { background: transparent; border: 1px solid #cbd5e1; }
+        .color-badge { background: #eef2ff; padding: 4px 10px; border-radius: 40px; font-size: 0.75rem; }
+        .family-badge { background: #e6f7e6; color: #2c6e2c; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px; background: #f8fafc; }
+        td { padding: 12px; border-bottom: 1px solid #f1f5f9; }
+        .action-icons button { background: none; border: none; cursor: pointer; margin: 0 4px; font-size: 1.1rem; }
+        .form-row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+        .form-field { flex: 1; min-width: 130px; }
+        .form-field input, .form-field select, .form-field textarea { width: 100%; padding: 8px 10px; border-radius: 14px; border: 1px solid #cbd5e1; }
+        .stats { background: #eef2ff; padding: 4px 12px; border-radius: 40px; font-size: 0.8rem; }
+        @media (max-width: 700px) { body { padding: 16px; } th, td { padding: 8px 6px; font-size: 0.75rem; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h1>🎨 3D打印材料库 · 云端同步</h1>
+        <div class="sub">所有设备共享数据，实时同步，色系快速筛选</div>
+    </div>
+
+    <div class="card">
+        <div style="font-weight: 600;">🔍 快速筛查</div>
+        <div class="filter-bar">
+            <div class="filter-group"><label>色系筛选</label><select id="filterFamilySelect"><option value="all">全部色系</option></select></div>
+            <div class="filter-group"><label>颜色关键词</label><input type="text" id="filterKeyword" placeholder="红 / 蓝 / 灰银"></div>
+            <div><button id="resetFilterBtn" class="btn btn-outline">重置</button><span id="filterResultCount" class="stats" style="margin-left:12px;">匹配 0 款</span></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="display: flex; justify-content: space-between;"><h3 style="margin:0;">📦 材料清单</h3><span id="syncStatus" class="stats" style="background:#e0f2fe;">☁️ 已连接云端</span></div>
+        <div class="table-wrapper" style="overflow-x:auto; margin-top:12px;"><table id="materialTable"><thead><tr><th>名称</th><th>品牌</th><th>颜色</th><th>色系</th><th>重量(g)</th><th>操作</th></thead><tbody id="tableBody"><tr><td colspan="6">加载中...</td></tr></tbody></table></div>
+        <div class="footer-actions" style="margin-top:12px; display: flex; justify-content: space-between;"><span id="totalCountDisplay" class="stats">总计 0 卷</span><button id="clearAllBtn" class="btn btn-outline btn-sm" style="color:#b91c1c;">⚠️ 清空全部数据</button></div>
+    </div>
+
+    <div class="card">
+        <div style="font-weight: 600;">➕ 添加 / 编辑材料</div>
+        <div class="form-row">
+            <div class="form-field"><label>材料名称 *</label><input type="text" id="matName" placeholder="PLA Basic"></div>
+            <div class="form-field"><label>品牌</label><input type="text" id="matBrand" placeholder="Bambu Lab"></div>
+            <div class="form-field"><label>颜色名称 *</label><input type="text" id="matColorName" placeholder="火焰红"></div>
+            <div class="form-field"><label>色系 *</label><select id="matFamily"></select></div>
+            <div class="form-field"><label>重量(g)</label><input type="number" id="matWeight" value="0"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-field" style="flex:2;"><label>备注</label><textarea id="matNotes" rows="1"></textarea></div>
+            <div><button id="saveMaterialBtn" class="btn btn-primary">💾 保存材料</button><button id="cancelEditBtn" class="btn btn-outline">取消</button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ================= 🔥 请在这里粘贴你的 Firebase 配置 =================
+    const firebaseConfig = {
+        // 将你在 Firebase 控制台复制的配置粘贴到这里（覆盖下面的示例）
+        apiKey: "你的 apiKey",
+        authDomain: "你的 authDomain",
+        databaseURL: "你的 databaseURL",
+        projectId: "你的 projectId",
+        storageBucket: "你的 storageBucket",
+        messagingSenderId: "你的 messagingSenderId",
+        appId: "你的 appId"
+    };
+    // =================================================================
+
+    if (Object.keys(firebaseConfig).some(key => firebaseConfig[key] === "你的" + key)) {
+        alert("请先在代码中粘贴你的 Firebase 配置！详见教程第二步。");
+    }
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const materialsRef = database.ref('filament_materials');
+
+    let materials = [];
+    let editModeId = null;
+    const COLOR_FAMILIES = ["红","橙","黄","绿","青","蓝","紫","粉","棕","灰","黑","白","银","金","透明","其他"];
+
+    const filterFamilySelect = document.getElementById('filterFamilySelect');
+    const filterKeyword = document.getElementById('filterKeyword');
+    const resetFilterBtn = document.getElementById('resetFilterBtn');
+    const filterResultCount = document.getElementById('filterResultCount');
+    const totalCountDisplay = document.getElementById('totalCountDisplay');
+    const tableBody = document.getElementById('tableBody');
+    const matName = document.getElementById('matName');
+    const matBrand = document.getElementById('matBrand');
+    const matColorName = document.getElementById('matColorName');
+    const matFamily = document.getElementById('matFamily');
+    const matWeight = document.getElementById('matWeight');
+    const matNotes = document.getElementById('matNotes');
+    const saveMaterialBtn = document.getElementById('saveMaterialBtn');
+    const cancelEditBtn = document.getElementById('cancelEditBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+
+    function initFamilySelects() {
+        let filterHtml = '<option value="all">全部色系</option>';
+        let formHtml = '';
+        COLOR_FAMILIES.forEach(f => { filterHtml += `<option value="${f}">${f}</option>`; formHtml += `<option value="${f}">${f}</option>`; });
+        filterFamilySelect.innerHTML = filterHtml;
+        matFamily.innerHTML = formHtml;
+    }
+
+    function listenToFirebase() {
+        materialsRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            materials = data ? Object.entries(data).map(([id, item]) => ({ id, ...item })) : [];
+            updateTotalCount();
+            renderFilteredTable();
+        });
+    }
+
+    function updateTotalCount() { totalCountDisplay.innerText = `总计 ${materials.length} 卷`; }
+
+    function getFilteredMaterials() {
+        let filtered = [...materials];
+        const family = filterFamilySelect.value;
+        const keyword = filterKeyword.value.trim().toLowerCase();
+        if (family !== 'all') filtered = filtered.filter(m => m.family === family);
+        if (keyword) filtered = filtered.filter(m => (m.colorName && m.colorName.toLowerCase().includes(keyword)) || (m.family && m.family.toLowerCase().includes(keyword)));
+        return filtered;
+    }
+
+    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){ if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
+
+    function renderFilteredTable() {
+        const filtered = getFilteredMaterials();
+        filterResultCount.innerText = `匹配 ${filtered.length} 款`;
+        if (filtered.length === 0) { tableBody.innerHTML = '<tr><td colspan="6">✨ 没有找到符合色系的材料，试试添加~</td></tr>'; return; }
+        let html = '';
+        filtered.forEach(mat => {
+            html += `<tr>
+                        <td><strong>${escapeHtml(mat.name)}</strong></td>
+                        <td>${escapeHtml(mat.brand || '-')}</td>
+                        <td><span class="color-badge">${escapeHtml(mat.colorName)}</span></td>
+                        <td><span class="color-badge family-badge">${escapeHtml(mat.family)}</span></td>
+                        <td>${mat.weight ? mat.weight + ' g' : '-'}</td>
+                        <td class="action-icons">
+                            <button class="edit-btn" data-id="${mat.id}">✏️</button>
+                            <button class="del-btn" data-id="${mat.id}">🗑️</button>
+                        </td>
+                    </tr>`;
+        });
+        tableBody.innerHTML = html;
+        document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', (e) => startEdit(btn.getAttribute('data-id'))));
+        document.querySelectorAll('.del-btn').forEach(btn => btn.addEventListener('click', (e) => { if(confirm('删除该材料？')) deleteMaterial(btn.getAttribute('data-id')); }));
+    }
+
+    async function saveMaterial() {
+        const name = matName.value.trim();
+        const colorName = matColorName.value.trim();
+        if(!name || !colorName) { alert("请填写材料名称和颜色名称"); return; }
+        const family = matFamily.value;
+        const weight = parseInt(matWeight.value) || 0;
+        const data = { name, brand: matBrand.value.trim(), colorName, family, weight, notes: matNotes.value.trim() };
+        if(editModeId) { await materialsRef.child(editModeId).update(data); editModeId = null; }
+        else { await materialsRef.push(data); }
+        clearForm();
+        saveMaterialBtn.innerText = '💾 保存材料';
+    }
+
+    function startEdit(id) {
+        const mat = materials.find(m => m.id === id);
+        if(!mat) return;
+        editModeId = id;
+        matName.value = mat.name;
+        matBrand.value = mat.brand || '';
+        matColorName.value = mat.colorName;
+        matFamily.value = mat.family;
+        matWeight.value = mat.weight;
+        matNotes.value = mat.notes || '';
+        saveMaterialBtn.innerText = '✏️ 更新材料';
+        document.querySelector('.card:last-of-type').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function deleteMaterial(id) { materialsRef.child(id).remove(); if(editModeId === id) cancelEdit(); }
+    function clearForm() { matName.value = ''; matBrand.value = ''; matColorName.value = ''; matFamily.value = COLOR_FAMILIES[0]; matWeight.value = ''; matNotes.value = ''; editModeId = null; saveMaterialBtn.innerText = '💾 保存材料'; }
+    function cancelEdit() { clearForm(); }
+    async function clearAllData() { if(confirm("⚠️ 这将删除云端所有材料，且不可恢复！确定吗？")) { await materialsRef.remove(); alert("所有数据已清空"); } }
+    function resetFilter() { filterFamilySelect.value = 'all'; filterKeyword.value = ''; renderFilteredTable(); }
+
+    function bindUI() {
+        filterFamilySelect.addEventListener('change', renderFilteredTable);
+        filterKeyword.addEventListener('input', renderFilteredTable);
+        resetFilterBtn.addEventListener('click', resetFilter);
+        saveMaterialBtn.addEventListener('click', saveMaterial);
+        cancelEditBtn.addEventListener('click', cancelEdit);
+        clearAllBtn.addEventListener('click', clearAllData);
+    }
+
+    function init() {
+        initFamilySelects();
+        bindUI();
+        listenToFirebase();
+    }
+    init();
+</script>
+</body>
+</html>
